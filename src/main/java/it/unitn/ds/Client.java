@@ -126,14 +126,14 @@ public class Client extends AbstractClient {
         Pending p = pendingReads.remove(msg.rid);
         if (p == null) return; // already timed out / duplicate
         p.timeout.cancel();
-        callbackOnReadResult(new ReadResult(true, msg.index, msg.value, msg.replicaId));
+        callbackOnReadResult(new ReadResult(msg.success, msg.index, msg.value, msg.replicaId));
     }
 
     private void onWriteReply(Replica.WriteReply msg) {
         Pending p = pendingWrites.remove(msg.rid);
         if (p == null) return;
         p.timeout.cancel();
-        callbackOnWriteResult(new WriteResult(true, msg.index, msg.value, msg.replicaId));
+        callbackOnWriteResult(new WriteResult(msg.success, msg.index, msg.value, msg.replicaId));
     }
 
     private void onReadTO(ReadTO msg) {
