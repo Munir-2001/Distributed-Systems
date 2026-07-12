@@ -10,21 +10,12 @@ import it.unitn.ds.AbstractReplica.Crash;
 import it.unitn.ds.AbstractReplica.InitSystem;
 
 /**
- * Demo entry point. Each scenario runs in its own actor system:
- *
- * <ol>
- *   <li>Normal operation: writes and reads, including two clients writing
- *       concurrently through different replicas (total order).</li>
- *   <li>Crash of a non-coordinator replica: the system keeps serving
- *       requests; a client contacting the dead replica observes timeouts.</li>
- *   <li>Coordinator crash in the middle of the WRITEOK dissemination: only
- *       one replica learns the outcome; the survivors detect the failure,
- *       elect the most up-to-date replica, and the new coordinator completes
- *       the interrupted update (safety property).</li>
- *   <li>Crash during the election: a replica dies upon receiving its first
- *       ELECTION message without acknowledging it; the ring routes around it
- *       and the election still completes.</li>
- * </ol>
+ * Demo entry point. Four scenarios, each in its own actor system:
+ *   1. Normal reads/writes, incl. two clients writing at once (total order).
+ *   2. A non-coordinator crashes; system keeps working, dead replica times out.
+ *   3. Coordinator crashes mid-WRITEOK; survivors elect a new one that finishes
+ *      the interrupted update.
+ *   4. A replica crashes during the election; the ring routes around it.
  */
 public class Main {
 
@@ -146,11 +137,7 @@ public class Main {
         }
     }
 
-    /**
-     * The coordinator applies an update, sends WRITEOK to a single replica and
-     * crashes: survivors detect the missing WRITEOK, elect the most up-to-date
-     * replica, and the new coordinator completes the interrupted update.
-     */
+    /** Coordinator crashes mid-WRITEOK; survivors elect a new one that finishes the update. */
     private static void scenarioCoordinatorCrashDuringWriteOk() throws InterruptedException {
         banner("SCENARIO 3: coordinator crashes during WRITEOK dissemination -> election");
         try (Scenario s = new Scenario("scenario3")) {
@@ -166,20 +153,16 @@ public class Main {
         }
     }
 
-    /**
-     * A replica crashes upon receiving its first ELECTION message, without
-     * acknowledging it: the forwarder times out waiting for the ACK, skips the
-     * dead replica, and the election completes among the survivors.
-     */
+    /** A replica dies on its first ELECTION message (no ACK); the ring skips it. */
     private static void scenarioCrashDuringElection() throws InterruptedException {
         banner("SCENARIO 4: a replica crashes during the election; ring skips it");
         try (Scenario s = new Scenario("scenario4")) {
-            // Give the system a non-trivial history first.
+            // Do a write first so there's some history.
             s.write(s.clientB, 4, 55);
             Thread.sleep(800);
 
-            // Replica 1 dies as soon as the first ELECTION message reaches it;
-            // the coordinator crashes now -> election among {1..4} minus 1.
+            // Replica 1 dies on its first ELECTION message; coordinator crashes
+            // now -> election runs among the survivors.
             s.crash(1, new Crash(Crash.Type.Election, 0));
             s.crash(COORDINATOR_ID, new Crash(Crash.Type.Now, 0));
             Thread.sleep(ELECTION_SETTLE_MS);

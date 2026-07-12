@@ -22,20 +22,13 @@ import java.util.concurrent.TimeUnit;
 import scala.concurrent.duration.Duration;
 
 /**
- * A replica of the distributed intelligence database.
+ * A replica of the shared list.
  *
- * <p>Implements:
- * <ul>
- *   <li>Read/write request handling (reads served locally, writes forwarded to
- *       the coordinator).</li>
- *   <li>A two-phase, quorum-based total-order broadcast (UPDATE / ACK / WRITEOK)
- *       driven by the coordinator.</li>
- *   <li>Timeout-based crash detection (heartbeats, write-forward timeouts,
- *       update timeouts).</li>
- *   <li>A ring-based coordinator election that selects the replica holding the
- *       most recent update, completes any interrupted update, and re-synchronizes
- *       the group.</li>
- * </ul>
+ * - Reads are served locally; writes are forwarded to the coordinator.
+ * - Writes go through a two-phase quorum broadcast: UPDATE / ACK / WRITEOK.
+ * - Crashes are detected by timeouts (heartbeat, write-forward, update).
+ * - On coordinator failure, a ring election picks the most up-to-date replica,
+ *   which finishes any interrupted update and re-syncs everyone.
  */
 public class Replica extends AbstractReplica {
 
@@ -77,11 +70,8 @@ public class Replica extends AbstractReplica {
         }
     }
 
-    /**
-     * Identifies an outstanding client write on its origin replica. Request ids
-     * are per-client counters, so two different clients writing through the
-     * same replica may carry the same rid: the pair ⟨client, rid⟩ is unique.
-     */
+    // Key for an outstanding client write. rid is per-client, so two clients
+    // can send the same rid to one replica; (client, rid) makes it unique.
     private static final class WriteKey implements Serializable {
         final ActorRef client;
         final long rid;
@@ -198,8 +188,7 @@ public class Replica extends AbstractReplica {
         public final int winnerId; // valid iff decided
         public Election(int crashedCoordinatorId, Map<Integer, UpdateId> candidates, boolean decided, int winnerId) {
             this.crashedCoordinatorId = crashedCoordinatorId;
-            // Shared objects must be immutable (spec §2): the same token
-            // instance is retained for ring-skip retransmission.
+            // copy + wrap: messages are shared between actors, keep them immutable
             this.candidates = Collections.unmodifiableMap(new HashMap<>(candidates));
             this.decided = decided;
             this.winnerId = winnerId;
@@ -220,8 +209,7 @@ public class Replica extends AbstractReplica {
         public Synchronization(int newCoordinatorId, int newEpoch, List<UpdateRecord> log) {
             this.newCoordinatorId = newCoordinatorId;
             this.newEpoch = newEpoch;
-            // Shared objects must be immutable (spec §2): one instance is
-            // broadcast to every peer.
+            // copy + wrap: one instance is broadcast to every peer, keep it immutable
             this.log = Collections.unmodifiableList(new ArrayList<>(log));
         }
     }
@@ -254,17 +242,15 @@ public class Replica extends AbstractReplica {
     private final Set<UpdateId> appliedIds = new HashSet<>();
     private UpdateId mostRecentObserved = null; // max over applied ∪ pending
 
-    // Coordinator-side 2PC bookkeeping. Updates are pipelined; the queue only
-    // holds requests received while an election blocks new broadcasts.
+    // Coordinator side. Updates are pipelined; requestQueue only holds writes
+    // that arrived while an election was blocking new broadcasts.
     private final Map<UpdateId, Set<Integer>> ackCounts = new HashMap<>();
     private final Set<UpdateId> committed = new HashSet<>();
     private final List<UpdateRequest> requestQueue = new ArrayList<>();
 
-    // Origin-side: client writes this replica forwarded and is still waiting on,
-    // keyed by (client, rid) since rids are only unique per client. MUST stay a
-    // LinkedHashMap: insertion order (= actor processing order = client send
-    // order) is the order failover resubmission walks, and per-client write
-    // order must survive a coordinator change (spec §1 sequential consistency).
+    // Client writes we forwarded and are still waiting to commit.
+    // LinkedHashMap on purpose: after a failover we resubmit these in insertion
+    // order = client send order, so a client's writes keep their order.
     private final Map<WriteKey, UpdateRequest> pendingClientWrites = new LinkedHashMap<>();
     private final Map<WriteKey, Cancellable> writeForwardTimeouts = new HashMap<>();
 
@@ -335,13 +321,10 @@ public class Replica extends AbstractReplica {
         }
     }
 
-    /**
-     * Broadcast that honours a typed-crash countdown on every message sent:
-     * the replica may crash part-way through the loop, having disseminated the
-     * message to only a subset of its peers. This emulates a coordinator
-     * failing "during the broadcast of an UPDATE" or "during the dissemination
-     * of WRITEOK messages". Callers must check {@code crashed} on return.
-     */
+    // Broadcast that checks the crash countdown before each send, so the
+    // replica can crash mid-loop after reaching only some peers (used to test
+    // a coordinator dying during an UPDATE or WRITEOK broadcast).
+    // Callers must check `crashed` afterwards.
     private void broadcastCrashing(Serializable m, Crash.Type t) {
         for (Map.Entry<Integer, ActorRef> e : group.entrySet()) {
             if (e.getKey() == id) continue;
@@ -367,15 +350,10 @@ public class Replica extends AbstractReplica {
         }
     }
 
-    /**
-     * Regime fencing (pure function, exposed for unit tests). Coordinatorship
-     * is identified by the pair ⟨epoch, coordinatorId⟩ compared
-     * lexicographically: a message stamped with a strictly smaller pair belongs
-     * to a superseded regime and must be ignored. Breaking equal-epoch ties on
-     * the coordinator id gives a deterministic winner should two concurrent
-     * election winners ever mint the same epoch, so replicas cannot flip-flop
-     * between them (split brain).
-     */
+    // True if (epoch, coordId) is older than the current (epoch, coordinator),
+    // compared as a pair. Used to drop messages from a superseded coordinator.
+    // On equal epochs the higher id wins, so two winners can't flip-flop.
+    // Static + public so it can be unit-tested directly.
     public static boolean staleRegime(int curEpoch, int curCoordId, int epoch, int coordId) {
         return epoch < curEpoch || (epoch == curEpoch && coordId < curCoordId);
     }
@@ -471,7 +449,11 @@ public class Replica extends AbstractReplica {
         // Crash.Type.Heartbeat on a plain replica = crash on receiving a heartbeat.
         if (maybeCrashBefore(Crash.Type.Heartbeat)) return;
         // Ignore beacons of a strictly older ⟨epoch, coordinator⟩ regime.
-        if (staleRegime(epoch, coordinatorId, hb.epoch, hb.coordinatorId)) return;
+        if (staleRegime(epoch, coordinatorId, hb.epoch, hb.coordinatorId)) {
+            debug("ignoring HEARTBEAT from stale regime (epoch " + hb.epoch
+                    + ", coordinator " + hb.coordinatorId + ")");
+            return;
+        }
         this.epoch = hb.epoch;
         this.coordinatorId = hb.coordinatorId;
         if (!isCoordinator()) {
@@ -482,6 +464,10 @@ public class Replica extends AbstractReplica {
 
     private void onHeartbeatTimeout(HeartbeatTimeout t) {
         if (crashed || isCoordinator()) return;
+        if (!inElection) {
+            debug("no heartbeat from coordinator " + coordinatorId + " within "
+                    + coordinatorTimeoutDelay() + "ms -> suspecting crash");
+        }
         startElection(coordinatorId);
     }
 
@@ -498,9 +484,9 @@ public class Replica extends AbstractReplica {
         if (crashed) return;
         ActorRef client = getSender();
         if (!isValidIndex(msg.index)) {
-            // Malformed index: answer with an explicit failure. Letting the
-            // array access throw would make Akka RESTART the actor with a
-            // wiped state — replicas fail by crashing, they never recover.
+            // Reply with failure. A raw array access would throw, and Akka would
+            // then restart the actor with fresh (empty) state.
+            debug("rejecting READ with out-of-range index " + msg.index);
             tell(new ReadReply(msg.rid, msg.index, null, id, false), client);
             return;
         }
@@ -511,13 +497,17 @@ public class Replica extends AbstractReplica {
         if (crashed) return;
         ActorRef client = getSender();
         if (!isValidIndex(msg.index)) {
-            // Reject here: an invalid index must never reach initiateUpdate,
-            // or every replica would throw at apply time.
+            // Reject up front: a bad index must not reach the broadcast, or
+            // every replica would throw when applying it.
+            debug("rejecting WRITE with out-of-range index " + msg.index);
             tell(new WriteReply(msg.rid, msg.index, msg.value, id, false), client);
             return;
         }
         UpdateRequest req = new UpdateRequest(msg.index, msg.value, id, client, msg.rid);
         pendingClientWrites.put(new WriteKey(client, msg.rid), req);
+        debug("client WRITE (" + msg.index + ", " + msg.value + ") -> "
+                + (isCoordinator() ? "handling locally (I am coordinator)"
+                                   : "forwarding to coordinator " + coordinatorId));
         forwardWriteToCoordinator(req);
     }
 
@@ -529,9 +519,8 @@ public class Replica extends AbstractReplica {
         }
         ActorRef coord = group.get(coordinatorId);
         if (coord == null) {
-            // Defensive only: unreachable after initSystem (coordinatorId always
-            // names a group member — dead or alive — from then on). The write
-            // stays pending and is re-forwarded on the next Synchronization.
+            // Shouldn't happen after init. Leave the write pending; it gets
+            // re-forwarded on the next Synchronization.
             return;
         }
         WriteKey key = new WriteKey(req.client, req.rid);
@@ -545,7 +534,8 @@ public class Replica extends AbstractReplica {
         if (crashed) return;
         writeForwardTimeouts.remove(t.key);
         if (!pendingClientWrites.containsKey(t.key)) return; // already committed
-        // The coordinator did not initiate the broadcast in time -> suspect crash.
+        // Coordinator never started the broadcast -> suspect it crashed.
+        debug("coordinator " + coordinatorId + " did not initiate the broadcast in time -> suspecting crash");
         startElection(coordinatorId);
     }
 
@@ -556,20 +546,17 @@ public class Replica extends AbstractReplica {
     private void onUpdateRequest(UpdateRequest req, ActorRef sender) {
         if (crashed || !isCoordinator()) return;
         if (inElection) {
-            // New write broadcasts must not start before synchronization completes.
+            // Don't start new broadcasts until the election/sync is done.
             requestQueue.add(req);
             return;
         }
         initiateUpdate(req);
     }
 
-    /**
-     * Coordinator: assign the next ⟨epoch, seq⟩ and start the two-phase
-     * broadcast. Updates are pipelined (several may be in flight): FIFO
-     * channels guarantee every replica observes UPDATEs — and later WRITEOKs —
-     * in sequence order, and since each replica ACKs in receive order, quorums
-     * for consecutive updates necessarily complete in order as well.
-     */
+    // Coordinator: stamp the next (epoch, seq) and start the broadcast.
+    // Several updates can be in flight at once. FIFO channels keep UPDATEs (and
+    // later WRITEOKs) in order, and replicas ACK in order, so quorums for
+    // consecutive updates also complete in order.
     private void initiateUpdate(UpdateRequest req) {
         UpdateId uid = new UpdateId(epoch, nextSeq++);
         UpdateRecord rec = new UpdateRecord(uid, req.index, req.value, req.originId, req.client, req.rid);
@@ -608,11 +595,10 @@ public class Replica extends AbstractReplica {
         Set<Integer> acks = ackCounts.get(uid);
         if (acks == null || acks.size() < quorum()) return;
         committed.add(uid);
-        // Apply locally and tell everyone to apply. May crash mid-loop
-        // (Crash.Type.WriteOK on the coordinator = crash during the
-        // dissemination of WRITEOK, after n messages were sent out): the
-        // coordinator has applied the update but only some replicas learn the
-        // outcome — the recovery protocol must complete it.
+        debug("quorum reached for update " + uid + " (" + acks.size() + "/" + group.size()
+                + " ACKs, incl. self) -> applying + WRITEOK dissemination");
+        // Apply here and tell everyone to apply. May crash mid-WRITEOK: we've
+        // applied but only some replicas hear about it -> recovery finishes it.
         applyUpdate(pendingUpdates.get(uid));
         broadcastCrashing(new WriteOk(uid), Crash.Type.WriteOK);
     }
@@ -625,17 +611,16 @@ public class Replica extends AbstractReplica {
         if (crashed) return;
         if (maybeCrashBefore(Crash.Type.Update)) return; // crash on receiving an UPDATE
         UpdateRecord rec = msg.record;
-        // Fence broadcasts of dead regimes: a delayed UPDATE from an older
-        // epoch must be neither observed nor acknowledged. (The regime itself
-        // is only adopted from Synchronization/Heartbeat messages, which carry
-        // the coordinator id — epochs never move backwards.)
-        if (rec.id.epoch < epoch) return;
-        // Treat the UPDATE as a sign of coordinator liveness.
+        // Drop UPDATEs from an old epoch (delayed message from a dead coordinator).
+        if (rec.id.epoch < epoch) {
+            debug("ignoring UPDATE " + rec.id + " from a dead epoch (current epoch " + epoch + ")");
+            return;
+        }
+        // An UPDATE means the coordinator is alive.
         if (!isCoordinator()) armHeartbeatTimeout();
 
-        // The coordinator has initiated the broadcast (spec: the forward
-        // timeout watches exactly this): for a write forwarded by this replica
-        // the per-update WRITEOK watchdog below takes over from here.
+        // Coordinator started the broadcast for our own write: the forward
+        // timeout is done, the WRITEOK timeout below takes over.
         if (rec.originId == id && rec.client != null) {
             cancel(writeForwardTimeouts.remove(new WriteKey(rec.client, rec.rid)));
         }
@@ -644,19 +629,17 @@ public class Replica extends AbstractReplica {
             pendingUpdates.put(rec.id, rec);
             updateMostRecentObserved(rec.id);
         }
-        // ACK back to whoever broadcast the UPDATE (the current coordinator):
-        // NetworkChannel preserves the original sender reference.
+        // ACK the sender (the coordinator); getSender() is preserved by NetworkChannel.
         tell(new UpdateAck(rec.id, id), getSender());
 
-        // Arm a timeout: if no WRITEOK arrives, suspect the coordinator.
+        // If no WRITEOK arrives, suspect the coordinator.
         cancel(updateTimeouts.remove(rec.id));
         updateTimeouts.put(rec.id, scheduleOnce(new UpdateTimeout(rec.id), coordinatorTimeoutDelay()));
     }
 
     private void onWriteOk(WriteOk msg) {
         if (crashed) return;
-        // Crash.Type.WriteOK on a plain replica = crash on receiving a WRITEOK,
-        // before applying the update.
+        // Optional crash point: die on receiving a WRITEOK, before applying.
         if (maybeCrashBefore(Crash.Type.WriteOK)) return;
         cancel(updateTimeouts.remove(msg.id));
         if (!isCoordinator()) armHeartbeatTimeout();
@@ -673,13 +656,14 @@ public class Replica extends AbstractReplica {
         if (appliedIds.contains(t.id)) return;       // applied in the meantime
         if (!pendingUpdates.containsKey(t.id)) return;
         // No WRITEOK for an observed UPDATE -> suspect the coordinator.
+        debug("no WRITEOK for observed update " + t.id + " -> suspecting coordinator " + coordinatorId);
         startElection(coordinatorId);
     }
 
-    /** Apply an update to local state exactly once, in id order, and notify. */
+    /** Apply an update once, updating local state, and notify the test probe. */
     private void applyUpdate(UpdateRecord rec) {
-        if (rec == null || appliedIds.contains(rec.id)) return;
-        cancel(updateTimeouts.remove(rec.id)); // update no longer at risk
+        if (rec == null || appliedIds.contains(rec.id)) return; // apply once
+        cancel(updateTimeouts.remove(rec.id));
         positions[rec.index] = rec.value;
         appliedIds.add(rec.id);
         pendingUpdates.remove(rec.id);
@@ -688,9 +672,8 @@ public class Replica extends AbstractReplica {
         log("applied update " + rec.id + " (" + rec.index + ", " + rec.value + ")");
         callbackOnUpdateApplied(rec.index, rec.value);
 
-        // If this replica originally received the client write, ack the client
-        // now — exactly once, even if the update is re-learned during a
-        // synchronization after the original coordinator crashed.
+        // If we took this client write, reply now. remove() != null guards
+        // against replying twice if the update is re-learned during a sync.
         if (rec.originId == id && rec.client != null) {
             WriteKey key = new WriteKey(rec.client, rec.rid);
             if (pendingClientWrites.remove(key) != null) {
@@ -743,8 +726,8 @@ public class Replica extends AbstractReplica {
         int myIdx = ringIndexOf(id);
         int n = ring.size();
         if (pendingElectionTargetOffset >= n) {
-            // Wrapped around the whole ring without an ack: every other replica is
-            // unreachable. If this is our own (undecided) token, we win by default.
+            // Tried the whole ring, no ACK: everyone else is down. If it's our
+            // own undecided token, we're the only survivor and win.
             if (!pendingElectionMsg.decided) {
                 becomeCoordinatorIfWinner(decideWinner(pendingElectionMsg.candidates), pendingElectionMsg);
             }
@@ -753,6 +736,9 @@ public class Replica extends AbstractReplica {
         }
         int targetId = ring.get((myIdx + pendingElectionTargetOffset) % n);
         expectedAckFrom = targetId;
+        debug("ELECTION token" + (pendingElectionMsg.decided ? " (decided, winner " + pendingElectionMsg.winnerId + ")" : "")
+                + " -> Replica " + targetId
+                + (pendingElectionTargetOffset > 1 ? " (after skipping " + (pendingElectionTargetOffset - 1) + " dead)" : ""));
         tell(pendingElectionMsg, group.get(targetId));
         cancel(electionAckTimer);
         final long token = pendingElectionToken;
@@ -764,6 +750,7 @@ public class Replica extends AbstractReplica {
         if (t.token != pendingElectionToken) return; // stale timer
         if (expectedAckFrom == -1) return;            // already acked
         // Presumed crash of the current target: skip it and try the next.
+        debug("no ElectionAck from Replica " + expectedAckFrom + " -> presumed crashed, skipping");
         pendingElectionTargetOffset++;
         sendElectionToOffset();
     }
@@ -777,19 +764,16 @@ public class Replica extends AbstractReplica {
 
     private void onElection(Election token) {
         if (crashed) return;
-        // A crash on an election message happens BEFORE acknowledging it: the
-        // forwarder must observe the missing ACK, time out, and route around us
-        // via the ring — that is exactly the failure the ACK mechanism detects.
+        // Crash BEFORE acking, so the forwarder sees no ACK and skips us.
         if (maybeCrashBefore(Crash.Type.Election)) return;
 
-        // Acknowledge the forwarder immediately so it does not skip us.
-        // NetworkChannel preserves the original sender, so getSender() is the replica.
+        // ACK the forwarder so it doesn't skip us. getSender() is preserved.
         ActorRef forwarder = getSender();
         if (forwarder != null) tell(new ElectionAck(id), forwarder);
 
-        // Drop stale tokens from an election we have already resolved.
+        // Ignore tokens for an election we already finished.
         if (!inElection) {
-            if (token.crashedCoordinatorId != coordinatorId) return; // already moved on
+            if (token.crashedCoordinatorId != coordinatorId) return;
             beginElectionParticipation(token.crashedCoordinatorId);
         }
 
@@ -799,7 +783,7 @@ public class Replica extends AbstractReplica {
         }
 
         if (token.candidates.containsKey(id)) {
-            // The token has visited every reachable replica: decide.
+            // Token came back to us: it visited everyone reachable, so decide.
             int winner = decideWinner(token.candidates);
             Election decided = new Election(token.crashedCoordinatorId, token.candidates, true, winner);
             if (winner == id) {
@@ -863,8 +847,10 @@ public class Replica extends AbstractReplica {
         this.epoch = maxEpoch + 1;
         this.coordinatorId = id;
 
-        // Complete any interrupted update we observed but never applied, so that the
-        // safety property holds, then publish our full log to everyone.
+        // Finish any update we observed but never applied, then sync everyone
+        // with our full log.
+        debug("election won -> new epoch " + epoch + ", completing " + pendingUpdates.size()
+                + " interrupted update(s), then broadcasting SYNCHRONIZATION");
         completePendingUpdates();
         List<UpdateRecord> fullLog = new ArrayList<>(history);
 
@@ -898,14 +884,10 @@ public class Replica extends AbstractReplica {
         pendingElectionMsg = null;
     }
 
-    /**
-     * Pure function (exposed for unit tests): the pending update ids a
-     * Synchronization log does NOT vouch for. These belong to broadcasts of a
-     * dead epoch that never reached a quorum — the quorum-intersection argument
-     * guarantees every committed update appears in the new coordinator's log —
-     * and must be purged when the new regime is installed, or a later election
-     * win would re-apply superseded updates (violating Integrity/total order).
-     */
+    // Pending ids that are NOT in the sync log. These are leftovers of the dead
+    // epoch that never committed (a committed update would be in the log), so we
+    // drop them on sync; otherwise a later election could re-apply them.
+    // Static + public so it can be unit-tested directly.
     public static Set<UpdateId> staleAfterSync(Collection<UpdateId> pendingIds, List<UpdateRecord> syncLog) {
         Set<UpdateId> vouched = new HashSet<>();
         for (UpdateRecord rec : syncLog) vouched.add(rec.id);
@@ -925,39 +907,45 @@ public class Replica extends AbstractReplica {
 
     private void onSynchronization(Synchronization sync) {
         if (crashed) return;
-        // Regime fence: reject announcements of a stale or already-installed
-        // regime. A superseded coordinator's delayed Synchronization (channels
-        // from distinct senders are independent) must not regress the epoch;
-        // on equal epochs the higher coordinator id deterministically wins.
+        // Ignore a stale or already-seen regime: a delayed Synchronization from
+        // an old coordinator must not roll the epoch back. Equal epoch, higher id wins.
         if (sync.newEpoch < epoch
-                || (sync.newEpoch == epoch && sync.newCoordinatorId <= coordinatorId)) return;
+                || (sync.newEpoch == epoch && sync.newCoordinatorId <= coordinatorId)) {
+            debug("ignoring SYNCHRONIZATION from stale regime (epoch " + sync.newEpoch
+                    + ", coordinator " + sync.newCoordinatorId + ")");
+            return;
+        }
 
         // Apply any updates we are missing, in order.
+        int missing = 0;
         for (UpdateRecord rec : sync.log) {
             if (!appliedIds.contains(rec.id)) {
                 applyUpdate(rec);
+                missing++;
             }
         }
-        // The log is the authoritative initial state of the new epoch: purge
-        // every pending update it does not vouch for (uncommitted leftovers of
-        // the dead epoch — their origins resubmit them below as fresh writes).
-        for (UpdateId stale : staleAfterSync(pendingUpdates.keySet(), sync.log)) {
-            pendingUpdates.remove(stale);
-            cancel(updateTimeouts.remove(stale));
+        // The log is the new epoch's starting state: drop pending updates not in
+        // it (dead-epoch leftovers). Their origins resubmit them below.
+        Set<UpdateId> stale = staleAfterSync(pendingUpdates.keySet(), sync.log);
+        for (UpdateId uid : stale) {
+            pendingUpdates.remove(uid);
+            cancel(updateTimeouts.remove(uid));
         }
         recomputeMostRecentObserved();
-        // Requests queued while we were (briefly) a coordinator belong to
-        // origins that resubmit on their own; replaying them would duplicate.
+        debug("SYNCHRONIZATION from new coordinator " + sync.newCoordinatorId + " (epoch " + sync.newEpoch
+                + "): applied " + missing + " missing update(s), purged " + stale.size() + " stale pending");
+        // Drop any queued requests: their origins resubmit them, so replaying
+        // ours would duplicate.
         requestQueue.clear();
 
         this.coordinatorId = sync.newCoordinatorId;
         this.epoch = sync.newEpoch;
         finishElection();
         callbackOnCoordinatorElected(sync.newCoordinatorId);
-        cancel(heartbeatTimer); // in case we were a superseded same-epoch coordinator
+        cancel(heartbeatTimer); // stop beaconing if we briefly thought we were coordinator
         armHeartbeatTimeout();
 
-        // Re-send any client writes that never committed to the new coordinator.
+        // Re-send our own writes that never committed to the new coordinator.
         resubmitOwnPendingWrites();
     }
 

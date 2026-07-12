@@ -67,7 +67,7 @@ public class FailoverRecovery {
     void staleAfterSyncWithEmptyLogPurgesEverything() {
         Set<Replica.UpdateId> pending = Set.of(new Replica.UpdateId(0, 0), new Replica.UpdateId(0, 1));
         assertEquals(pending, Replica.staleAfterSync(pending, List.of()),
-                "with an empty authoritative log every pending update is stale");
+                "with an empty sync log, every pending update is stale");
     }
 
     // =========================================================================
