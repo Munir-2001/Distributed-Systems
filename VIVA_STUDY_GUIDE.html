@@ -409,8 +409,7 @@
     <li><span class="loc">Replica.java:429 crashNow()</span><em>cancel timers → <code>become(crashedReceive())</code></em></li>
     <li><span class="loc">Replica.java:418 maybeCrashBefore()</span><em>typed countdowns: Now / Heartbeat / Update / WriteOK / Election</em></li>
     <li><span class="loc">Replica.java:345 broadcastCrashing()</span><em>per-message countdown ⇒ partial dissemination</em></li>
-    <li><span class="loc">application.conf</span><em>StoppingSupervisorStrategy: an exception = crash-stop, never a state-wiping restart</em></li>
-    <li><span class="loc">Replica.java:493 isValidIndex()</span><em>malformed index → explicit failure reply, not an exception</em></li>
+    <li><span class="loc">Replica.java:493 isValidIndex()</span><em>malformed index → explicit failure reply, never an exception (an exception would make Akka restart the replica with wiped state — a “recovered” replica, which the model forbids)</em></li>
   </ul></div>
   <figure class="term"><pre><span class="m">11:42:09.008 [DEBUG]</span> [Replica 1] <b class="bad">rejecting WRITE with out-of-range index -1</b>
 <span class="m">11:42:09.029 [INFO]</span>  [Client clientA] WRITE complete (<b class="bad">false</b>, -1, 42, 1)
