@@ -4,7 +4,9 @@ plugins {
 }
 
 application {
-    mainClass = "it.unitn.ds.Main"
+    // Default entry point (presentation demo). Override for the annotated
+    // simulation:  ./gradlew run -PmainClass=it.unitn.ds.Simulation
+    mainClass = providers.gradleProperty("mainClass").orElse("it.unitn.ds.Main")
 }
 
 repositories {

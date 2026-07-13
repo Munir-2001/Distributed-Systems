@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DS1 Viva Study Guide — Quorum-Based Total Order Broadcast</title>
+<style>
+  :root {
+    --paper: #F5F6F8;
+    --card: #FFFFFF;
+    --ink: #1C2433;
+    --muted: #5B6A80;
+    --line: #DDE2EA;
+    --accent: #0B7D6E;
+    --accent-soft: #0B7D6E1A;
+    --crash: #B54334;
+    --crash-soft: #B543341A;
+    --epoch: #9A6A0B;
+    --term-bg: #10141C;
+    --term-ink: #C4CCD9;
+    --term-dim: #6B7689;
+    --term-accent: #45D0BC;
+    --term-bad: #E37E6F;
+    --term-epoch: #E3B84E;
+    --chip-bg: #EAEDF2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #131720;
+      --card: #1A2029;
+      --ink: #D7DDE8;
+      --muted: #8C99AD;
+      --line: #2A3240;
+      --accent: #45D0BC;
+      --accent-soft: #45D0BC1F;
+      --crash: #E37E6F;
+      --crash-soft: #E37E6F21;
+      --epoch: #E3B84E;
+      --chip-bg: #232B37;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #131720;
+    --card: #1A2029;
+    --ink: #D7DDE8;
+    --muted: #8C99AD;
+    --line: #2A3240;
+    --accent: #45D0BC;
+    --accent-soft: #45D0BC1F;
+    --crash: #E37E6F;
+    --crash-soft: #E37E6F21;
+    --epoch: #E3B84E;
+    --chip-bg: #232B37;
+  }
+  :root[data-theme="light"] {
+    --paper: #F5F6F8;
+    --card: #FFFFFF;
+    --ink: #1C2433;
+    --muted: #5B6A80;
+    --line: #DDE2EA;
+    --accent: #0B7D6E;
+    --accent-soft: #0B7D6E1A;
+    --crash: #B54334;
+    --crash-soft: #B543341A;
+    --epoch: #9A6A0B;
+    --chip-bg: #EAEDF2;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .serif { font-family: Charter, "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif; }
+  code, .mono, pre {
+    font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+
+  .wrap { max-width: 780px; margin: 0 auto; padding: 0 20px; }
+
+  /* ---------- header ---------- */
+  header { padding: 48px 0 8px; }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700;
+  }
+  h1 {
+    font-family: Charter, "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
+    font-size: clamp(30px, 5.4vw, 44px); line-height: 1.12; margin: 10px 0 12px;
+    text-wrap: balance; letter-spacing: -0.01em;
+  }
+  .lede { font-family: Charter, Cambria, Georgia, serif; font-size: 18px; color: var(--muted); max-width: 60ch; margin: 0 0 22px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 26px; }
+  .chip {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    background: var(--chip-bg); color: var(--muted); font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .chip.acc { background: var(--accent-soft); color: var(--accent); }
+
+  /* ---------- sticky nav ---------- */
+  nav {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--paper);
+    border-bottom: 1px solid var(--line);
+  }
+  .navrow {
+    display: flex; gap: 6px; overflow-x: auto; padding: 10px 20px;
+    max-width: 780px; margin: 0 auto; scrollbar-width: none;
+  }
+  .navrow::-webkit-scrollbar { display: none; }
+  .navrow a {
+    flex: 0 0 auto; font-size: 12.5px; font-weight: 600; text-decoration: none;
+    color: var(--muted); padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  .navrow a:hover, .navrow a:focus-visible { color: var(--accent); border-color: var(--accent); outline: none; }
+
+  /* ---------- parts & sections ---------- */
+  .part {
+    margin: 52px 0 8px; display: flex; align-items: baseline; gap: 12px;
+  }
+  .part .roman { font-family: Charter, Cambria, Georgia, serif; font-size: 15px; color: var(--accent); font-weight: 700; letter-spacing: .08em; }
+  .part h2 { font-family: Charter, Cambria, Georgia, serif; font-size: 24px; margin: 0; letter-spacing: -0.01em; }
+  .part::after { content: ""; flex: 1; border-top: 1px solid var(--line); transform: translateY(-4px); }
+
+  section.concept { margin: 30px 0 40px; scroll-margin-top: 64px; }
+  .cnum {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 30px; height: 30px; padding: 0 8px; border-radius: 8px;
+    background: var(--accent-soft); color: var(--accent);
+    font-weight: 800; font-size: 15px; font-variant-numeric: tabular-nums;
+    margin-right: 10px; vertical-align: -4px;
+  }
+  section.concept h3 {
+    font-family: Charter, Cambria, Georgia, serif; font-size: 22px;
+    margin: 0 0 12px; line-height: 1.25; text-wrap: balance;
+  }
+  section.concept p { max-width: 68ch; margin: 12px 0; }
+  section.concept strong { color: var(--ink); }
+  .why { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; color: var(--muted); font-size: 15px; margin: 14px 0; max-width: 64ch; }
+
+  /* code map */
+  .codemap { margin: 14px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--card); }
+  .codemap-title {
+    font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700;
+    color: var(--muted); padding: 8px 14px; border-bottom: 1px solid var(--line);
+  }
+  .codemap ul { list-style: none; margin: 0; padding: 6px 0; }
+  .codemap li { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 6px 14px; font-size: 13.5px; align-items: baseline; }
+  .codemap li + li { border-top: 1px dashed var(--line); }
+  .loc {
+    font-family: "SF Mono", "Cascadia Code", ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12.5px; color: var(--accent); background: var(--accent-soft);
+    padding: 1px 7px; border-radius: 6px; white-space: nowrap;
+  }
+  .codemap li em { color: var(--muted); font-style: normal; }
+
+  /* terminal excerpt — deliberately dark in both themes */
+  figure.term { margin: 16px 0; }
+  .term pre {
+    margin: 0; background: var(--term-bg); color: var(--term-ink);
+    border-radius: 10px; padding: 14px 16px; overflow-x: auto;
+    font-size: 12.3px; line-height: 1.72; font-variant-numeric: tabular-nums;
+  }
+  .term figcaption { font-size: 12.5px; color: var(--muted); margin-top: 7px; padding-left: 4px; }
+  .term .m { color: var(--term-dim); }
+  .term b { font-weight: 600; }
+  .term b.ok { color: var(--term-accent); font-weight: 700; }
+  .term b.bad { color: var(--term-bad); font-weight: 700; }
+  .term b.ep { color: var(--term-epoch); font-weight: 700; }
+
+  /* viva callout */
+  .say {
+    background: var(--accent-soft); border-radius: 10px; padding: 12px 16px;
+    font-size: 14.5px; margin: 16px 0 0; max-width: 68ch;
+  }
+  .say .tag { font-weight: 800; color: var(--accent); font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; display: block; margin-bottom: 3px; }
+
+  /* tables */
+  .tablewrap { overflow-x: auto; margin: 16px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th {
+    text-align: left; font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); padding: 9px 14px; border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  td { padding: 8px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td code { font-size: 12px; color: var(--accent); }
+
+  /* diagrams */
+  .diagram { margin: 18px 0; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; overflow-x: auto; }
+  .diagram svg { display: block; margin: 0 auto; }
+  .diagram figcaption, .diagram .cap { font-size: 12.5px; color: var(--muted); margin-top: 8px; text-align: center; }
+
+  /* Q&A */
+  details {
+    border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+    margin: 10px 0; padding: 0;
+  }
+  details summary {
+    cursor: pointer; padding: 12px 16px; font-weight: 650; font-size: 15px;
+    list-style: none; display: flex; gap: 10px; align-items: baseline;
+  }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before { content: "Q"; color: var(--accent); font-weight: 800; font-family: Charter, Georgia, serif; }
+  details[open] summary { border-bottom: 1px solid var(--line); }
+  details .a { padding: 12px 16px 14px; font-size: 14.5px; color: var(--ink); max-width: 70ch; }
+  details .a p { margin: 0 0 10px; } details .a p:last-child { margin-bottom: 0; }
+
+  /* runbook */
+  .cmd {
+    background: var(--term-bg); color: var(--term-ink); border-radius: 10px;
+    padding: 12px 16px; margin: 10px 0; overflow-x: auto;
+    font-size: 13px; line-height: 1.7;
+  }
+  .cmd .c { color: var(--term-dim); }
+  .cmd b { color: var(--term-accent); font-weight: 600; }
+
+  .kbd-note { font-size: 13px; color: var(--muted); }
+  footer { margin: 64px 0 40px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+  a { color: var(--accent); }
+</style>
+
+<header class="wrap">
+  <div class="eyebrow">Distributed Systems 1 · Project 2025–26 · UniTN</div>
+  <h1>Quorum-Based Total Order Broadcast — the viva dossier</h1>
+  <p class="lede">Fifteen concepts, each mapped to the exact code that implements it and to a real log excerpt from the annotated simulation. Every log line below was produced by <span class="mono" style="font-size:.92em">Simulation.java</span> — you can regenerate all of it live at the viva.</p>
+  <div class="meta">
+    <span class="chip acc">Java + Akka actors</span>
+    <span class="chip">N = 5 replicas · quorum = 3</span>
+    <span class="chip">⟨epoch : seq⟩ update ids</span>
+    <span class="chip">46/46 tests green</span>
+    <span class="chip">ring election · sync · fencing</span>
+  </div>
+</header>
+
+<nav><div class="navrow">
+  <a href="#c1">1 RSM</a><a href="#c2">2 TOB</a><a href="#c3">3 Two-phase</a><a href="#c4">4 Quorum</a>
+  <a href="#c5">5 Epochs</a><a href="#c6">6 Seq. consistency</a><a href="#c7">7 Crash model</a><a href="#c8">8 Detection</a>
+  <a href="#c9">9 Election</a><a href="#c10">10 Sync</a><a href="#c11">11 Fencing</a><a href="#c12">12 Exactly-once</a>
+  <a href="#c13">13 FIFO</a><a href="#c14">14 Actors</a><a href="#c15">15 Safety/Liveness</a>
+  <a href="#run">Runbook</a><a href="#qa">Q&amp;A</a>
+</div></nav>
+
+<main class="wrap">
+
+<!-- ============================================================ PART I -->
+<div class="part"><span class="roman">PART I</span><h2>Foundations</h2></div>
+
+<section class="concept" id="c1">
+  <h3><span class="cnum">1</span>Replicated state machine</h3>
+  <p>The “database” is an array of 100 ints, <code>positions[]</code> — one copy per replica. The entire project rests on a single invariant: <strong>replicas that start identical and apply the same updates in the same order remain identical.</strong> Every other mechanism (quorums, epochs, elections) exists only to preserve “same updates, same order” while replicas crash.</p>
+  <div class="codemap"><div class="codemap-title">Code map</div><ul>
+    <li><span class="loc">Replica.java:248</span><em>the state:</em> <code>positions[POSITIONS_LIST_LENGTH]</code></li>
+    <li><span class="loc">Replica.java:680 applyUpdate()</span><em>the only place state ever changes — one funnel enforces ordering &amp; exactly-once</em></li>
+    <li><span class="loc">Replica.java:253</span><em><code>history</code> — the applied log, used later for recovery</em></li>
+  </ul></div>
+  <div class="say"><span class="tag">Say at the viva</span>“All state changes flow through one method, <code>applyUpdate</code>. That single choke point is where total order, deduplication, and the client reply are enforced.”</div>
+</section>
+
+<section class="concept" id="c2">
+  <h3><span class="cnum">2</span>Total Order Broadcast — the abstraction</h3>
+  <p>The spec’s four TOB properties are not slogans — each one is carried by a specific mechanism:</p>
+  <div class="tablewrap"><table>
+    <tr><th>Property</th><th>Meaning</th><th>Mechanism</th></tr>
+    <tr><td><strong>Total order</strong></td><td>everyone applies in the same sequence</td><td>fixed sequencer (coordinator) stamps ⟨epoch:seq⟩ · <code>initiateUpdate</code>, FIFO channels</td></tr>
+    <tr><td><strong>Integrity</strong></td><td>apply at most once</td><td><code>appliedIds</code> check in <code>applyUpdate</code> · stale-pending purge <code>staleAfterSync</code></td></tr>
+    <tr><td><strong>Uniform agreement</strong></td><td>applied anywhere ⇒ applied everywhere (eventually)</td><td>quorum before WRITEOK · new coordinator completes interrupted updates</td></tr>
+    <tr><td><strong>Validity</strong></td><td>correct sender’s update is eventually delivered</td><td>origin keeps pending writes, resubmits after failover · <code>resubmitOwnPendingWrites</code></td></tr>
+  </table></div>
+  <div class="say"><span class="tag">Say at the viva</span>“This is <em>fixed-sequencer</em> TOB. Its weakness — the sequencer is a single point of failure — is exactly what the election protocol repairs.”</div>
+</section>
+
+<section class="concept" id="c3">
+  <h3><span class="cnum">3</span>The two-phase update protocol</h3>
+  <figure class="diagram">
+    <svg viewBox="0 0 660 240" width="660" height="240" role="img" aria-label="Write path swimlane: client to origin replica to coordinator, UPDATE fan-out, ACK quorum, WRITEOK fan-out, reply">
+      <style>
+        .lane { stroke: var(--line); stroke-width: 1; }
+        .lbl  { font: 600 12px -apple-system, "Segoe UI", sans-serif; fill: var(--muted); }
+        .msg  { stroke: var(--accent); stroke-width: 1.6; marker-end: url(#arr); fill: none; }
+        .msg2 { stroke: var(--muted); stroke-width: 1.3; marker-end: url(#arr2); fill: none; stroke-dasharray: 4 3; }
+        .mlbl { font: 600 11px "SF Mono", ui-monospace, Menlo, monospace; fill: var(--accent); }
+        .mlbl2{ font: 600 11px "SF Mono", ui-monospace, Menlo, monospace; fill: var(--muted); }
+        .ph   { font: 700 10px -apple-system, sans-serif; fill: var(--epoch); letter-spacing: .08em; }
+      </style>
+      <defs>
+        <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--accent)"/></marker>
+        <marker id="arr2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--muted)"/></marker>
+      </defs>
+      <!-- lanes -->
+      <text x="8"  y="34" class="lbl">Client</text>          <line x1="70" y1="30" x2="650" y2="30" class="lane"/>
+      <text x="8"  y="84" class="lbl">Replica 1</text>       <line x1="70" y1="80" x2="650" y2="80" class="lane"/>
+      <text x="8"  y="139" class="lbl">Coordinator</text>    <line x1="70" y1="135" x2="650" y2="135" class="lane"/>
+      <text x="8"  y="194" class="lbl">Replicas 2–4</text>   <line x1="70" y1="190" x2="650" y2="190" class="lane"/>
+      <!-- messages -->
+      <line x1="95"  y1="30"  x2="130" y2="80"  class="msg"/>  <text x="76"  y="56" class="mlbl">WriteReq</text>
+      <line x1="140" y1="80"  x2="180" y2="135" class="msg"/>  <text x="142" y="106" class="mlbl">forward</text>
+      <line x1="205" y1="135" x2="255" y2="80"  class="msg"/>
+      <line x1="205" y1="135" x2="255" y2="190" class="msg"/>  <text x="212" y="118" class="mlbl">UPDATE ⟨0:0⟩</text>
+      <line x1="280" y1="80"  x2="330" y2="135" class="msg2"/>
+      <line x1="280" y1="190" x2="330" y2="135" class="msg2"/> <text x="286" y="162" class="mlbl2">ACK ×quorum</text>
+      <line x1="365" y1="135" x2="420" y2="80"  class="msg"/>
+      <line x1="365" y1="135" x2="420" y2="190" class="msg"/>  <text x="368" y="118" class="mlbl">WRITEOK</text>
+      <line x1="450" y1="80"  x2="500" y2="30"  class="msg"/>  <text x="444" y="60" class="mlbl">WriteReply</text>
+      <!-- phases -->
+      <text x="200" y="228" class="ph">PHASE 1 — MAKE IT STABLE</text>
+      <text x="410" y="228" class="ph">PHASE 2 — APPLY</text>
+      <!-- apply marks -->
+      <circle cx="130" cy="135" r="3.5" fill="var(--epoch)"/><text x="105" y="152" class="mlbl2" fill="var(--epoch)">assign id</text>
+      <circle cx="440" cy="135" r="3.5" fill="var(--accent)"/>
+      <circle cx="428" cy="80"  r="3.5" fill="var(--accent)"/>
+      <circle cx="428" cy="190" r="3.5" fill="var(--accent)"/><text x="452" y="196" class="mlbl">apply</text>
+    </svg>
+    <div class="cap">One committed write: receive → forward → UPDATE (store as <em>pending</em>, don’t apply!) → quorum of ACKs → WRITEOK → apply → reply.</div>
+  </figure>
+  <p><strong>Why two phases?</strong> Applying on UPDATE receipt would be fatal — the coordinator could die having reached one replica, which would then hold state nobody else ever saw. Phase 1 makes the update <em>stable</em> (known to a majority) <strong>before</strong> anyone applies. Not 2PC: no unanimous vote, no abort path — it’s the commit round of Paxos / Viewstamped Replication with a majority.</p>
+  <p><strong>Pipelining</strong> is safe: FIFO channels ⇒ each replica receives and ACKs UPDATEs in order ⇒ the quorum for seq <em>s</em> necessarily completes before <em>s+1</em> ⇒ commits happen in order.</p>
+  <div class="codemap"><div class="codemap-title">Code map</div><ul>
+    <li><span class="loc">Client.java:113 sendWrite()</span><em>request + client-side timeout</em></li>
+    <li><span class="loc">Replica.java:510 onWriteReq()</span><em>validate, remember ⟨client,rid⟩, forward</em></li>
+    <li><span class="loc">Replica.java:573 initiateUpdate()</span><em>stamp ⟨epoch, nextSeq++⟩, broadcast UPDATE</em></li>
+    <li><span class="loc">Replica.java:624 onUpdate()</span><em>store pending (NOT applied), ACK sender</em></li>
+    <li><span class="loc">Replica.java:606 maybeCommit()</span><em>quorum check → apply + WRITEOK</em></li>
+    <li><span class="loc">Replica.java:656 onWriteOk()</span><em>apply on receipt</em></li>
+  </ul></div>
+  <figure class="term"><pre><span class="m">11:41:27.333 [INFO]</span>  [Client clientA] requesting WRITE (0, 42) to Replica_1
+<span class="m">11:41:27.335 [DEBUG]</span> [Replica 1] client WRITE (0, 42) -&gt; forwarding to coordinator 0
+<span class="m">11:41:27.484 [DEBUG]</span> [Replica 0] <b class="ok">quorum reached for update 0:0 (3/5 ACKs, incl. self)</b> -&gt; applying + WRITEOK dissemination
+<span class="m">11:41:27.484 [INFO]</span>  [Replica 0] applied update <b class="ep">0:0</b> (0, 42)
+<span class="m">11:41:27.512 [INFO]</span>  [Replica 4] applied update <b class="ep">0:0</b> (0, 42)
+<span class="m">11:41:27.522 [INFO]</span>  [Replica 1] applied update <b class="ep">0:0</b> (0, 42)
+<span class="m">11:41:27.558 [INFO]</span>  [Client clientA] <b class="ok">WRITE complete (true, 0, 42, 1)</b></pre>
+  <figcaption>SIM A — the undisturbed write path: quorum 3/5, then every replica applies ⟨0:0⟩.</figcaption></figure>
+</section>
+
+<section class="concept" id="c4">
+  <h3><span class="cnum">4</span>Why a majority? Quorum intersection</h3>
+  <figure class="diagram">
+    <svg viewBox="0 0 460 170" width="460" height="170" role="img" aria-label="Two overlapping majorities always intersect">
+      <circle cx="185" cy="85" r="70" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.6"/>
+      <circle cx="275" cy="85" r="70" fill="var(--crash-soft)" stroke="var(--crash)" stroke-width="1.6"/>
+      <text x="120" y="88" style="font:600 12px -apple-system,sans-serif" fill="var(--accent)">Q₁ ACKed u</text>
+      <text x="288" y="88" style="font:600 12px -apple-system,sans-serif" fill="var(--crash)">Q₂ alive at election</text>
+      <text x="205" y="90" style="font:800 14px -apple-system,sans-serif" fill="var(--ink)">∩ ≠ ∅</text>
+      <text x="132" y="160" style="font:600 12px -apple-system,sans-serif" fill="var(--muted)">any two majorities of the same N share a member</text>
+    </svg>
+  </figure>
+  <p>The safety chain, four steps you should recite fluently: <strong>(a)</strong> u applied anywhere ⇒ u committed ⇒ a majority Q₁ <em>observed</em> u; <strong>(b)</strong> the spec guarantees a live majority Q₂ at election time; <strong>(c)</strong> Q₁∩Q₂ ≠ ∅ ⇒ some live replica observed u; <strong>(d)</strong> the election picks the <em>most-recent-observed</em> live replica ⇒ the winner observed u ⇒ it completes u and ships it to everyone. <strong>Nothing committed can be lost.</strong></p>
+  <p>Hidden lemma: “has the most recent” implies “has everything before it” — FIFO channels + in-order commits mean you cannot observe seq <em>s</em> without having received all of ≤ <em>s</em> first. Without FIFO, “most recent” would be meaningless.</p>
+  <div class="codemap"><div class="codemap-title">Code map</div><ul>
+    <li><span class="loc">Replica.java:317 quorum()</span><em><code>group.size()/2 + 1</code></em></li>
+    <li><span class="loc">Replica.java:255 mostRecentObserved</span><em>max over applied ∪ pending — “observed”, not “applied”</em></li>
+    <li><span class="loc">Replica.java:827 decideWinner()</span><em>freshest observation wins, id breaks ties</em></li>
+  </ul></div>
+  <figure class="term"><pre><span class="m">11:41:48.975 [INFO]</span>  [Replica 0] <b class="bad">CRASHED: WriteOK (1)</b>   <span class="m">← WRITEOK reached ONE replica only</span>
+<span class="m">11:41:49.092 [INFO]</span>  [Replica 0] applied update <b class="ep">0:0</b> (5, 55)
+<span class="m">11:41:49.124 [INFO]</span>  [Replica 1] applied update <b class="ep">0:0</b> (5, 55)
+<span class="m">11:41:51.149 [DEBUG]</span> [Replica 4] <b class="bad">no WRITEOK for observed update 0:0</b> -&gt; suspecting coordinator 0
+<span class="m">11:41:51.604 [DEBUG]</span> [Replica 4] <b class="ok">election won -&gt; new epoch 1, completing 1 interrupted update(s)</b>
+<span class="m">11:41:51.604 [INFO]</span>  [Replica 4] applied update <b class="ep">0:0</b> (5, 55)
+<span class="m">11:41:51.644 [DEBUG]</span> [Replica 2] SYNCHRONIZATION from new coordinator 4 (epoch 1): <b class="ok">applied 1 missing update(s)</b></pre>
+  <figcaption>SIM F — the intersection argument live: replicas 0 and 1 applied ⟨0:0⟩; the winner had <em>observed</em> it, completes it, everyone converges.</figcaption></figure>
+  <div class="say"><span class="tag">Say at the viva</span>“The election criterion is most-recent-<em>observed</em>, not most-recent-<em>applied</em> — commitment only guarantees a quorum observed the update as pending. That distinction is the whole safety proof.”</div>
+</section>
+
+<section class="concept" id="c5">
+  <h3><span class="cnum">5</span>⟨epoch : seq⟩ — the total order itself</h3>
+  <p><strong>epoch</strong> = a coordinator’s reign number — a Raft <em>term</em>, a Paxos <em>ballot</em>, a VR <em>view</em>. It only moves at elections: the winner sets <code>epoch = maxSeen + 1</code>. <strong>seq</strong> = position within the reign, reset to 0 each epoch. Update ids compare lexicographically — that ordering <em>is</em> the total order every replica applies.</p>
+  <div class="codemap"><div class="codemap-title">Code map</div><ul>
+    <li><span class="loc">Replica.java:47 UpdateId</span><em><code>compareTo</code>: epoch first, then seq</em></li>
+    <li><span class="loc">Replica.java:855 becomeCoordinatorIfWinner()</span><em><code>epoch = maxSeen+1; nextSeq = 0</code></em></li>
+  </ul></div>
+  <figure class="term"><pre><span class="m">11:42:00.836 [DEBUG]</span> [Replica 4] election won -&gt; <b class="ep">new epoch 1</b>, completing 0 interrupted update(s)
+<span class="m">11:42:04.089 [INFO]</span>  [Replica 4] applied update <b class="ep">1:0</b> (7, 77)   <span class="m">← sequence RESET to 0 in the new epoch</span></pre>
+  <figcaption>SIM G — first write after failover: epoch bumped to 1, sequence restarted at 0.</figcaption></figure>
+</section>
+
+<section class="concept" id="c6">
+  <h3><span class="cnum">6</span>Sequential consistency — what clients may see</h3>
+  <p>Reads are answered <strong>locally and immediately</strong> from applied state — no coordination. So a read may be <em>stale</em> (that replica hasn’t applied the newest update yet). What is forbidden is going <em>backwards</em>: each replica applies the one total order prefix-by-prefix, so values at any single replica move monotonically forward. That is sequential consistency; linearizability would require coordinated reads and is deliberately traded away for fast local reads.</p>
+  <div class="codemap"><div class="codemap-title">Code map</div><ul>
+    <li><span class="loc">Replica.java:497 onReadReq()</span><em>reply from <code>positions[idx]</code>, zero hops</em></li>
+    <li><span class="loc">NoCrashes.java</span><em>base test asserts per-replica monotone values</em></li>
+  </ul></div>
+  <figure class="term"><pre><span class="m">11:41:31.957 [INFO]</span>  [Client clientA] WRITE complete (true, 2, <b class="ok">7</b>, 1)
+<span class="m">11:41:33.237 [INFO]</span>  [Client clientA] requesting WRITE (2, <b class="ok">8</b>) to Replica_1
+<span class="m">11:41:33.358 [INFO]</span>  [Client clientB] requesting READ (2) to Replica_3
+<span class="m">11:41:33.486 [INFO]</span>  [Client clientB] READ complete (true, 2, <b class="ep">7</b>, 3)   <span class="m">← STALE: WRITEOK for 8 still in flight</span>
+<span class="m">11:41:33.805 [INFO]</span>  [Replica 3] applied update 0:1 (2, 8)
+<span class="m">11:41:35.360 [INFO]</span>  [Client clientB] READ complete (true, 2, <b class="ok">8</b>, 3)   <span class="m">← moved FORWARD, never back</span></pre>
+  <figcaption>SIM C (high-latency channels) — a stale read of 7 during the commit of 8, then 8. Legal under sequential consistency.</figcaption></figure>
+  <div class="say"><span class="tag">Say at the viva</span>“Two clients can simultaneously read different values from different replicas — allowed. One client polling one replica can never see values regress — guaranteed.”</div>
+</section>
+
+<!-- ============================================================ PART II -->
+<div class="part"><span class="roman">PART II</span><h2>Failures</h2></div>
+
+<section class="concept" id="c7">
+  <h3><span class="cnum">7</span>The failure model: crash-stop</h3>
+  <p>Replicas fail by <strong>crashing silently and never recover</strong> — no Byzantine behavior. A crash is a <em>behavior switch</em>, not actor death: <code>crashNow()</code> cancels all timers and swaps in a receive loop that ignores everything. Typed crash points let the instructors kill a replica at protocol-critical instants — including <strong>mid-broadcast</strong> (the coordinator dies having reached only some replicas), which manufactures exactly the situation recovery must repair.</p>
+  <div class="codemap"><div class="codemap-title">Code map</div><ul>
+    <li><span class="loc">Replica.java:429 crashNow()</span><em>cancel timers → <code>become(crashedReceive())</code></em></li>
+    <li><span class="loc">Replica.java:418 maybeCrashBefore()</span><em>typed countdowns: Now / Heartbeat / Update / WriteOK / Election</em></li>
+    <li><span class="loc">Replica.java:345 broadcastCrashing()</span><em>per-message countdown ⇒ partial dissemination</em></li>
+    <li><span class="loc">application.conf</span><em>StoppingSupervisorStrategy: an exception = crash-stop, never a state-wiping restart</em></li>
+    <li><span class="loc">Replica.java:493 isValidIndex()</span><em>malformed index → explicit failure reply, not an exception</em></li>
+  </ul></div>
+  <figure class="term"><pre><span class="m">11:42:09.008 [DEBUG]</span> [Replica 1] <b class="bad">rejecting WRITE with out-of-range index -1</b>
+<span class="m">11:42:09.029 [INFO]</span>  [Client clientA] WRITE complete (<b class="bad">false</b>, -1, 42, 1)
+<span class="m">11:42:09.058 [INFO]</span>  [Client clientA] READ complete (<b class="bad">false</b>, 100, null, 1)
+<span class="m">11:42:09.652 [INFO]</span>  [Client clientA] READ complete (true, 0, <b class="ok">9</b>, 1)   <span class="m">← prior state INTACT: no silent restart</span></pre>
+  <figcaption>SIM I — malformed input answered explicitly; the replica survives with its state. An exception would have made Akka restart it blank.</figcaption></figure>
+</section>
+
+<section class="concept" id="c8">
+  <h3><span class="cnum">8</span>Failure detection — three watchdogs + client timeouts</h3>
+  <p>Asynchronous systems cannot distinguish <em>slow</em> from <em>dead</em> (the FLP obstacle). The spec assumes detection is <strong>accurate</strong> — effectively a perfect failure detector — and our job is sizing timeouts so the assumption holds: everything derives from <code>coordinatorTimeoutDelay = 2×beat + maxLatencyPlusTolerance</code>. Each watchdog covers a different silent-failure window:</p>
+  <div class="tablewrap"><table>
+    <tr><th>Watchdog</th><th>Armed / reset</th><th>Detects a coordinator that died…</th><th>Code</th></tr>
+    <tr><td>Heartbeat</td><td>on every heartbeat / UPDATE / WRITEOK</td><td>while <strong>idle</strong></td><td><code>onHeartbeatTimeout:483</code></td></tr>
+    <tr><td>Write-forward</td><td>at forward; satisfied when the origin sees its own UPDATE</td><td><strong>before initiating</strong> a broadcast</td><td><code>onWriteForwardTimeout:544</code></td></tr>
+    <tr><td>WRITEOK</td><td>per pending update at UPDATE receipt</td><td><strong>mid-protocol</strong>, between UPDATE and WRITEOK</td><td><code>onUpdateTimeout:671</code></td></tr>
+    <tr><td>Client read/write</td><td>per request, matched by rid</td><td>a crashed <em>contacted replica</em></td><td><code>Client.java:139/145</code></td></tr>
+  </table></div>
+  <figure class="term"><pre><span class="m">11:41:43.454 [DEBUG]</span> [Replica 4] <b class="bad">no heartbeat from coordinator 0 within 2070ms</b> -&gt; suspecting crash
+<span class="m">11:41:43.728 [DEBUG]</span> [Replica 1] <b class="bad">coordinator 0 did not initiate the broadcast in time</b> -&gt; suspecting crash
+<span class="m">11:41:40.724 [INFO]</span>  [Client clientB] <b class="bad">TIMEOUT READ request to Replica_4 (3)</b>   <span class="m">← SIM D, client-side</span></pre>
+  <figcaption>SIM E + D — all three levels of detection firing.</figcaption></figure>
+</section>
+
+<section class="concept" id="c9">
+  <h3><span class="cnum">9</span>Ring-based coordinator election</h3>
+  <p>A modified <strong>Chang–Roberts</strong> ring over sorted ids. The <code>Election</code> token accumulates ⟨id → mostRecentObserved⟩ from every node it visits; when it reaches a node already in its candidate map it has completed a full lap — it now contains <em>every reachable replica</em> — and the decision is taken: <strong>freshest observation wins, higher id breaks ties.</strong> Replicas may crash mid-election: every hop must be ACKed; a missing <code>ElectionAck</code> within the timeout means the successor is dead — skip it. If the decided winner itself died, an overall timer restarts the whole election (liveness backstop only).</p>
+  <div class="codemap"><div class="codemap-title">Code map</div><ul>
+    <li><span class="loc">Replica.java:712 startElection()</span><em>watchdog fired → create token, join election once</em></li>
+    <li><span class="loc">Replica.java:778 onElection()</span><em>crash check <strong>before</strong> ACK (a dead node must not ack!), add self, forward / decide</em></li>
+    <li><span class="loc">Replica.java:742 sendElectionToOffset()</span><em>per-hop ACK wait, skip-on-timeout</em></li>
+    <li><span class="loc">Replica.java:827 decideWinner()</span><em>freshest ⟨epoch:seq⟩, tie → higher id</em></li>
+    <li><span class="loc">Replica.java:972 onElectionOverallTimeout()</span><em>4× backstop restart</em></li>
+  </ul></div>
+  <figure class="term"><pre><span class="m">11:41:58.420 [INFO]</span>  [Replica 1] <b class="bad">CRASHED: Election (0)</b>   <span class="m">← will die on its 1st ELECTION message, WITHOUT acking</span>
+<span class="m">11:42:00.597 [DEBUG]</span> [Replica 4] <b class="bad">no ElectionAck from Replica 0</b> -&gt; presumed crashed, skipping
+<span class="m">11:42:00.597 [DEBUG]</span> [Replica 4] ELECTION token -&gt; Replica 1 <b>(after skipping 1 dead)</b>
+<span class="m">11:42:00.737 [DEBUG]</span> [Replica 4] <b class="bad">no ElectionAck from Replica 1</b> -&gt; presumed crashed, skipping
+<span class="m">11:42:00.737 [DEBUG]</span> [Replica 4] ELECTION token -&gt; Replica 2 <b>(after skipping 2 dead)</b>
+<span class="m">11:42:00.767 [DEBUG]</span> [Replica 2] ELECTION token <b class="ok">(decided, winner 4)</b> -&gt; Replica 3
+<span class="m">11:42:00.836 [INFO]</span>  [Replica 4] <b class="ok">NEW COORDINATOR elected: 4</b></pre>
+  <figcaption>SIM G — the ring routes around two dead nodes (crashed coordinator + election-crashed replica) and still converges.</figcaption></figure>
+</section>
+
+<section class="concept" id="c10">
+  <h3><span class="cnum">10</span>Takeover &amp; synchronization — a view change</h3>
+  <p>The winner’s first acts, in order (Viewstamped Replication calls this a <em>view change</em>): <strong>(1)</strong> new regime — <code>epoch = maxSeen+1</code>, <code>seq = 0</code>; <strong>(2)</strong> <strong>complete interrupted updates</strong> — apply everything observed-but-unapplied, in id order (the spec’s safety clause); <strong>(3)</strong> broadcast <code>SYNCHRONIZATION</code> with its full history — followers apply what they miss (idempotent) and <strong>purge</strong> pending updates the log doesn’t vouch for; <strong>(4)</strong> only then heartbeat and serve new writes, while origins resubmit unacknowledged client writes.</p>
+  <div class="codemap"><div class="codemap-title">Code map</div><ul>
+    <li><span class="loc">Replica.java:855 becomeCoordinatorIfWinner()</span><em>steps 1–4 in sequence</em></li>
+    <li><span class="loc">Replica.java:884 completePendingUpdates()</span><em>the interrupted-update repair</em></li>
+    <li><span class="loc">Replica.java:926 onSynchronization()</span><em>apply missing · purge stale · adopt regime · resubmit</em></li>
+    <li><span class="loc">Replica.java:909 staleAfterSync()</span><em>pure function: pending ids the log doesn’t vouch for</em></li>
+  </ul></div>
+  <figure class="term"><pre><span class="m">11:41:43.858 [DEBUG]</span> [Replica 4] <b class="ok">election won -&gt; new epoch 1</b>, completing 0 interrupted update(s), then broadcasting SYNCHRONIZATION
+<span class="m">11:41:43.891 [DEBUG]</span> [Replica 1] SYNCHRONIZATION from new coordinator 4 (epoch 1): applied 0 missing, purged 0 stale pending
+<span class="m">11:41:44.000 [INFO]</span>  [Replica 4] applied update <b class="ep">1:0</b> (4, 44)   <span class="m">← the swallowed write, RESUBMITTED by its origin</span>
+<span class="m">11:41:44.068 [INFO]</span>  [Client clientA] <b class="ok">WRITE complete (true, 4, 44, 1)</b>   <span class="m">← Validity: the client still gets exactly one answer</span></pre>
+  <figcaption>SIM E — coordinator died <em>before</em> broadcasting; after sync the origin resubmits and the write commits as ⟨1:0⟩.</figcaption></figure>
+  <div class="say"><span class="tag">Say at the viva</span>“The purge is the dual of completion: the sync log is the authoritative start of the new epoch — pendings it vouches for get applied, pendings it doesn’t are dead-epoch leftovers whose origins resubmit them. Keeping them would let a later election win re-apply superseded updates.”</div>
+</section>
+
+<section class="concept" id="c11">
+  <h3><span class="cnum">11</span>Regime fencing — keeping dead coordinators dead</h3>
+  <p>Channels have independent random delays, so a superseded coordinator’s messages can arrive <em>after</em> the new one’s. Every regime-bearing message is checked against the pair <strong>⟨epoch, coordinatorId⟩, compared lexicographically</strong>: stale heartbeats are ignored, a delayed SYNCHRONIZATION can’t regress the epoch, old-epoch UPDATEs are neither observed nor ACKed. Equal-epoch ties resolve to the higher id — deterministic convergence instead of split-brain flip-flopping. Same idea as Raft’s “reject older terms”.</p>
+  <div class="codemap"><div class="codemap-title">Code map</div><ul>
+    <li><span class="loc">Replica.java:379 staleRegime()</span><em>pure function, unit-tested in all orderings</em></li>
+    <li><span class="loc">Replica.java:469 onHeartbeat()</span> · <span class="loc">onSynchronization():926</span> · <span class="loc">onUpdate() epoch fence</span></li>
+  </ul></div>
+  <figure class="term"><pre><span class="m">11:41:55.985 [INFO]</span>  --- [11] injecting DELAYED messages from the dead epoch-0 regime
+<span class="m">11:41:55.986 [DEBUG]</span> [Replica 2] <b class="bad">ignoring HEARTBEAT from stale regime (epoch 0, coordinator 0)</b>
+<span class="m">11:41:55.987 [DEBUG]</span> [Replica 2] <b class="bad">ignoring SYNCHRONIZATION from stale regime (epoch 0, coordinator 0)</b>
+<span class="m">11:41:56.613 [INFO]</span>  [Client clientA] READ complete (true, 5, <b class="ok">55</b>, 2)   <span class="m">← still serving the NEW regime’s value</span></pre>
+  <figcaption>SIM F — injected ghosts of the dead epoch bounce off the fence.</figcaption></figure>
+</section>
+
+<!-- ============================================================ PART III -->
+<div class="part"><span class="roman">PART III</span><h2>Clients, network, actors</h2></div>
+
+<section class="concept" id="c12">
+  <h3><span class="cnum">12</span>Exactly-once client semantics</h3>
+  <p>Request ids are <strong>per-client counters</strong>, so the origin keys outstanding writes by the pair <strong>⟨client, rid⟩</strong> — two clients writing through the same replica both start at rid 0 and must not collide. The reply is claimed atomically (<code>remove(key) != null</code> → reply once) inside <code>applyUpdate</code>, so an update re-learned via a sync log can’t answer twice; a write lost with its coordinator is resubmitted and commits under a fresh id — the client sees exactly one result either way. Resubmission walks a <code>LinkedHashMap</code>, preserving each client’s send order across failover.</p>
+  <div class="codemap"><div class="codemap-title">Code map</div><ul>
+    <li><span class="loc">Replica.java:85 WriteKey</span><em>⟨client, rid⟩ identity</em></li>
+    <li><span class="loc">Replica.java:268 pendingClientWrites</span><em>LinkedHashMap — insertion order = client send order</em></li>
+    <li><span class="loc">Replica.java:680 applyUpdate()</span><em>claim-then-reply, exactly once</em></li>
+  </ul></div>
+  <figure class="term"><pre><span class="m">11:42:06.463 [INFO]</span>  --- both first requests carry rid=0; origin keys them by (client, rid)
+<span class="m">11:42:06.633 [INFO]</span>  [Client clientX] <b class="ok">WRITE complete (true, 8, 111, 1)</b>
+<span class="m">11:42:06.672 [INFO]</span>  [Client clientY] <b class="ok">WRITE complete (true, 9, 222, 1)</b>   <span class="m">← both answered — no collision</span></pre>
+  <figcaption>SIM H — colliding rids through one origin replica; each client gets its own reply.</figcaption></figure>
+</section>
+
+<section class="concept" id="c13">
+  <h3><span class="cnum">13</span>The emulated network — FIFO is load-bearing</h3>
+  <p>One <code>NetworkChannel</code> actor per (sender → destination) pair queues messages and delivers them one at a time with a random delay in [min, max] — so latency is random but <strong>order within a channel is preserved</strong>, and the original sender survives delivery. Three proofs silently lean on FIFO: <strong>(1)</strong> apply order — WRITEOK(s) can’t overtake UPDATE(s); <strong>(2)</strong> pipelining safety — per-replica ACK order ⇒ commit order; <strong>(3)</strong> sync-before-traffic — the winner’s SYNCHRONIZATION precedes its heartbeats and updates on the same channels. But FIFO holds <em>per channel only</em> — cross-sender ordering doesn’t exist, which is exactly why regime fencing (#11) is needed.</p>
+  <div class="codemap"><div class="codemap-title">Code map</div><ul>
+    <li><span class="loc">NetworkChannel.java:55 onEnqueue()</span> · <span class="loc">:62 onDeliver()</span> · <span class="loc">:79 scheduleNextDelivery()</span></li>
+    <li><span class="loc">AbstractReplica.java:96 tell()</span><em>lazily one channel per destination — mandatory send path</em></li>
+  </ul></div>
+</section>
+
+<section class="concept" id="c14">
+  <h3><span class="cnum">14</span>Actor-model mechanics</h3>
+  <p><strong>One message at a time per actor</strong> — all replica state is lock-free because the protocol code is sequential per replica; concurrency exists only <em>between</em> actors. <strong>Messages are immutable</strong> (final fields; collections defensively copied and unmodifiable — the same instance is broadcast and retained for retransmission). <strong>Time is a message</strong>: every timeout is a scheduled self-message with a <code>Cancellable</code> handle, so even timers flow through the mailbox. <strong>Crash = behavior switch</strong> via <code>become()</code>. The abstract classes are the observability contract: the <code>callbackOn*</code> methods forward protocol events to test probes, which is why calling them at exactly the right moments is mandatory.</p>
+  <div class="codemap"><div class="codemap-title">Code map</div><ul>
+    <li><span class="loc">Replica.java:194 Election</span> · <span class="loc">:216 Synchronization</span><em>unmodifiable contents (spec §2)</em></li>
+    <li><span class="loc">Replica.java:283 scheduleOnce()</span><em>timeouts as self-messages</em></li>
+    <li><span class="loc">AbstractReplica.java:337–364</span><em>callbackOnCoordinatorElected / UpdateApplied / ElectionStarted</em></li>
+  </ul></div>
+</section>
+
+<!-- ============================================================ PART IV -->
+<div class="part"><span class="roman">PART IV</span><h2>Synthesis</h2></div>
+
+<section class="concept" id="c15">
+  <h3><span class="cnum">15</span>Safety vs. liveness — the closing argument</h3>
+  <p><strong>Safety</strong> (no lost committed update, no double apply, no two regimes) rests only on counting and comparing — quorum intersection, ⟨epoch:seq⟩ order, ⟨epoch, coordinatorId⟩ fencing, <code>appliedIds</code> — never on clocks. <strong>Liveness</strong> (writes commit, elections finish) is where timeouts, heartbeats, ring skipping and the restart backstop live, protected by the spec’s assumptions: a majority never crashes, detection is accurate, channels are reliable and FIFO.</p>
+  <div class="tablewrap"><table>
+    <tr><th>Assumption (spec)</th><th>What breaks without it</th></tr>
+    <tr><td>Strict majority never crashes</td><td>no quorum to commit or elect — the system halts (by design, rather than diverging)</td></tr>
+    <tr><td>Accurate crash detection</td><td>false suspicion → election against a live coordinator; fencing bounds the damage deterministically</td></tr>
+    <tr><td>Reliable FIFO channels</td><td>gap-freedom lemma dies — “most recent” no longer implies “has everything”</td></tr>
+    <tr><td>Crash-stop (no recovery)</td><td>a recovered replica with stale state would need a re-join/catch-up protocol (not required here)</td></tr>
+  </table></div>
+</section>
+
+<!-- ============================================================ RUNBOOK -->
+<section class="concept" id="run">
+  <h3><span class="cnum" style="min-width:auto">▶</span>Runbook — regenerate every log on this page</h3>
+  <div class="cmd"><span class="c"># the 4-scenario presentation demo (Main.java)</span>
+./gradlew run
+
+<span class="c"># the annotated simulation — all concepts, debug narration ON (Simulation.java)</span>
+./gradlew run <b>-PmainClass=it.unitn.ds.Simulation</b>
+
+<span class="c"># run a single scenario at the viva (letters A–I, several allowed)</span>
+./gradlew run -PmainClass=it.unitn.ds.Simulation <b>--args="F"</b>
+
+<span class="c"># capture the full log to a file</span>
+./gradlew run -PmainClass=it.unitn.ds.Simulation --quiet &gt; simulation.log
+
+<span class="c"># the whole test suite: 33 base + 13 custom = 46</span>
+./gradlew cleanTest test</div>
+  <div class="tablewrap"><table>
+    <tr><th>Scenario</th><th>What it stages</th><th>Concepts</th></tr>
+    <tr><td><code>SIM A</code></td><td>undisturbed write path — forward, quorum 3/5, WRITEOK, applies</td><td>1 2 3 4 5</td></tr>
+    <tr><td><code>SIM B</code></td><td>4 pipelined writes from 2 clients → one order 0:0…0:3 everywhere</td><td>3 5</td></tr>
+    <tr><td><code>SIM C</code></td><td>slow channels: stale-but-monotone local reads</td><td>6 13</td></tr>
+    <tr><td><code>SIM D</code></td><td>crashed replica → client TIMEOUT callbacks; service continues</td><td>7 8</td></tr>
+    <tr><td><code>SIM E</code></td><td>coordinator dies <em>before</em> broadcasting → forward-timeout, election, resubmission, ⟨1:0⟩</td><td>8 10 12</td></tr>
+    <tr><td><code>SIM F</code></td><td>coordinator dies mid-WRITEOK → interrupted update completed; stale-regime ghosts fenced</td><td>4 9 10 11</td></tr>
+    <tr><td><code>SIM G</code></td><td>replica dies on its first ELECTION message → ring skips 2 dead nodes</td><td>9 5</td></tr>
+    <tr><td><code>SIM H</code></td><td>two clients, one origin, colliding rid=0 → both answered</td><td>12</td></tr>
+    <tr><td><code>SIM I</code></td><td>out-of-range index → explicit failure, state intact</td><td>7</td></tr>
+  </table></div>
+  <p class="kbd-note">Tip for the viva demo: run SIM F and narrate the quorum-intersection chain over the live log — it exercises detection, election, completion, synchronization and fencing in one 12-second window.</p>
+</section>
+
+<!-- ============================================================ QA -->
+<section class="concept" id="qa">
+  <h3><span class="cnum" style="min-width:auto">?</span>Viva drills — likely questions</h3>
+
+  <details><summary>Why two phases? Why not apply as soon as the UPDATE arrives?</summary><div class="a">
+    <p>Applying on UPDATE would let a replica apply something known only to itself (coordinator dies after reaching one replica). Phase 1 makes the update <em>stable</em> — observed by a majority — before Phase 2 permits anyone to apply. Once a majority has it pending, quorum intersection guarantees any future election winner knows it, so applying is safe.</p>
+  </div></details>
+
+  <details><summary>Why exactly ⌊N/2⌋+1? Why not fewer, or all?</summary><div class="a">
+    <p>Majority is the smallest quorum where any two quorums intersect — that intersection carries committed updates across coordinator changes. Fewer (no intersection guarantee) loses updates; all (2PC-style) blocks on a single crash. Majority is the sweet spot: tolerates ⌈N/2⌉−1 crashes and never blocks while a majority lives.</p>
+  </div></details>
+
+  <details><summary>Walk me through what happens if the coordinator crashes right after sending WRITEOK to one replica.</summary><div class="a">
+    <p>That replica applies; the others hold the update pending and their WRITEOK watchdogs fire → election. Every live replica observed the update (they ACKed it), so the freshest-observation criterion (tie → highest id) elects someone who has it. The winner completes it via <code>completePendingUpdates</code>, ships it in the SYNCHRONIZATION log, everyone converges — the applied write is never lost (uniform agreement). SIM F is exactly this.</p>
+  </div></details>
+
+  <details><summary>Why does the election pick “most recent OBSERVED” rather than “most recent APPLIED”?</summary><div class="a">
+    <p>Commitment only guarantees a majority <em>observed</em> the update as pending — possibly nobody applied it (coordinator died before any WRITEOK left). If we elected by applied state we could lose a committed update. Observed = applied ∪ pending is the correct notion of “knowledge” for the intersection argument.</p>
+  </div></details>
+
+  <details><summary>Can two coordinators exist at the same time?</summary><div class="a">
+    <p>Under the spec’s accurate-detection assumption, no — a coordinator is only replaced after actually crashing. Defensively, regimes are fenced by ⟨epoch, coordinatorId⟩ compared lexicographically: messages of a strictly smaller pair are ignored, and equal-epoch ties deterministically resolve to the higher id, so even a pathological double-win converges instead of flip-flopping.</p>
+  </div></details>
+
+  <details><summary>What if a replica crashes during the election itself?</summary><div class="a">
+    <p>Every ELECTION hop must be ACKed. A dead successor never ACKs (crash fires <em>before</em> acking), the forwarder times out and skips to the next ring member. If the <em>decided winner</em> died, the overall election timer (4× coordinator timeout) restarts the election; the dead node no longer appears among candidates. SIM G shows a double skip live.</p>
+  </div></details>
+
+  <details><summary>Is this linearizable? What consistency do clients actually get?</summary><div class="a">
+    <p>No — reads are local and can be stale. The guarantee is sequential consistency: all replicas apply the one total order, so per-replica reads are monotone and all clients agree on the order of writes. Linearizability would need coordinated (e.g., quorum) reads; the spec trades that for one-hop reads.</p>
+  </div></details>
+
+  <details><summary>How do you guarantee a client write is never executed twice after a failover?</summary><div class="a">
+    <p>Two dedup layers. Update level: <code>appliedIds</code> makes application idempotent. Request level: the origin tracks writes by ⟨client, rid⟩ and only resubmits those still unclaimed <em>after</em> applying the sync log — if the write survived (in the log), applying it claims and answers it, so nothing is left to resubmit; if it didn’t survive, the stale pending entry was purged and the resubmission is the only copy.</p>
+  </div></details>
+
+  <details><summary>Why must the resubmission order be preserved? (Why LinkedHashMap?)</summary><div class="a">
+    <p>Sequential consistency promises per-client program order. Pending writes W1, W2 from one client resubmitted inverted would commit as W2, W1 — a client that wrote A then B could end with A as the final value. Insertion order of the map = mailbox processing order = client send order, so walking it preserves program order across failover.</p>
+  </div></details>
+
+  <details><summary>What does the WRITE-forward timeout watch exactly?</summary><div class="a">
+    <p>Per spec: that the coordinator <em>initiates the broadcast</em> in time. It’s armed when the origin forwards, and satisfied the moment the origin receives the UPDATE for its own request — from there the per-update WRITEOK watchdog takes over. Two watchdogs, two distinct failure windows.</p>
+  </div></details>
+
+  <details><summary>What happens on epoch change to the sequence numbers, and why is that safe?</summary><div class="a">
+    <p>The winner sets epoch = maxSeen+1 and resets seq to 0; ids compare epoch-first, so ⟨1:0⟩ &gt; ⟨0:57⟩ — the total order continues without collision. Uncommitted ⟨0:*⟩ leftovers are purged at synchronization, so they can never be applied after the regime change.</p>
+  </div></details>
+
+  <details><summary>Which parts are safety and which are liveness? What breaks if a timeout is too short?</summary><div class="a">
+    <p>Safety: quorums, id ordering, fencing, dedup — timing-independent. Liveness: detection and elections. A too-short timeout violates the accurate-detection <em>assumption</em> (false suspicion): the system would run a spurious election against a live coordinator — availability noise, while fencing keeps the outcome deterministic. That’s why every timeout is derived from max latency + tolerance and the heartbeat interval.</p>
+  </div></details>
+
+  <details><summary>Known limitations you’d state upfront?</summary><div class="a">
+    <p>(1) One in-flight election token per replica — overwritten ACK-retry state can drop a token; backstopped by the overall restart timer (liveness-only). (2) A decided token addressed to a dead winner circulates until that same backstop. (3) Unbounded history and full-history SYNCHRONIZATION — fine at project scale; production would checkpoint + send deltas. All documented in REPORT_NOTES.md.</p>
+  </div></details>
+</section>
+
+<footer class="wrap" style="padding-left:0;padding-right:0">
+  <div>Source map: <span class="mono">src/main/java/it/unitn/ds/</span> — Replica.java (protocol) · Client.java (requests/timeouts) · NetworkChannel.java (FIFO delays) · Main.java (4-scenario demo) · Simulation.java (annotated, debug ON) · <span class="mono">src/test/java/it/unitn/ds/custom/</span> (13 custom tests) · REPORT_NOTES.md (assumptions)</div>
+</footer>
+
+</main>
+
+</html>

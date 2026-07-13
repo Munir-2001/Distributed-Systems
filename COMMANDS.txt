@@ -1,0 +1,96 @@
+================================================================================
+ DS1 PROJECT — QUORUM-BASED TOTAL ORDER BROADCAST — COMMAND CHEAT SHEET
+================================================================================
+ Run everything from the project folder:
+   cd ds-student-project-2026
+================================================================================
+
+
+--------------------------------------------------------------------------------
+ BUILD & TEST
+--------------------------------------------------------------------------------
+
+# Compile everything
+./gradlew build
+
+# Run the full test suite (33 base + 13 custom = 46 tests)
+./gradlew cleanTest test
+
+# Run only the base tests the instructors provided
+./gradlew test --tests "it.unitn.ds.base.*"
+
+# Run only our custom regression tests
+./gradlew test --tests "it.unitn.ds.custom.*"
+
+
+--------------------------------------------------------------------------------
+ PRESENTATION DEMO  (Main.java — clean logs, debug OFF, 4 scenarios)
+--------------------------------------------------------------------------------
+
+./gradlew run
+
+
+--------------------------------------------------------------------------------
+ ANNOTATED SIMULATION  (Simulation.java — debug narration ON, 9 scenarios)
+--------------------------------------------------------------------------------
+
+# Run ALL scenarios (A..I), ~50 seconds
+./gradlew run -PmainClass=it.unitn.ds.Simulation
+
+# Run a SINGLE scenario (best for the viva) — letters A..I
+./gradlew run -PmainClass=it.unitn.ds.Simulation --args="F"
+
+# Run several specific scenarios
+./gradlew run -PmainClass=it.unitn.ds.Simulation --args="F G"
+
+  Scenario cheat sheet:
+    A  write path — forward, quorum 3/5, WRITEOK, apply        [concepts 1-5]
+    B  pipelined updates -> one total order everywhere          [3,5]
+    C  slow channels: stale-but-monotone local reads            [6,13]
+    D  crashed replica -> client TIMEOUT callbacks              [7,8]
+    E  coordinator dies BEFORE broadcasting -> resubmission     [8,10,12]
+    F  coordinator dies mid-WRITEOK -> election completes it    [4,9,10,11]  <- showcase
+    G  replica dies during election -> ring skips it            [9,5]
+    H  two clients, one replica, colliding rid=0 -> both OK     [12]
+    I  out-of-range index -> explicit failure, state intact     [7]
+
+
+--------------------------------------------------------------------------------
+ CAPTURE & INSPECT LOGS
+--------------------------------------------------------------------------------
+
+# Save the full simulation log to a file
+./gradlew run -PmainClass=it.unitn.ds.Simulation --quiet > simulation.log
+
+# Scroll through it (/ to search inside less, q to quit)
+less simulation.log
+
+# Only the protocol narration lines
+grep DEBUG simulation.log
+
+# Follow one replica's story
+grep "Replica 4" simulation.log
+
+# Only the key protocol events
+grep -E "ELECTION|COORDINATOR|applied update|quorum|WRITE complete" simulation.log
+
+
+--------------------------------------------------------------------------------
+ STUDY MATERIAL
+--------------------------------------------------------------------------------
+
+# Open the viva study guide in a browser (offline, self-contained)
+open VIVA_STUDY_GUIDE.html
+#   online copy: https://claude.ai/code/artifact/f3b1da39-39f5-4724-9312-5b66112327d2
+
+# Design/assumptions notes for the report
+open REPORT_NOTES.md
+
+
+--------------------------------------------------------------------------------
+ NOTE FOR SUBMISSION
+--------------------------------------------------------------------------------
+# The tar archive should contain ONLY source + the report PDF.
+# Leave out study material: VIVA_STUDY_GUIDE.html, REPORT_NOTES.md, COMMANDS.txt,
+# simulation.log, build/, .gradle/
+================================================================================
